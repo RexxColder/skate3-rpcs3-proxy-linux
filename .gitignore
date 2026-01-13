@@ -1,0 +1,72 @@
+# Gitignore para Skate 3 Proxy Linux
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs y capturas
+captures/*.log
+captures/*.hex
+*.log
+
+# Configuración LOCAL (credenciales)
+config/login.json
+.config/
+
+# Archivos de test temporales
+temp_*.py
+test_exact_*.py
+test_windows_length.py
+debug_*.py
+
+# Análisis generados
+COMPLETE_PROTOCOL_MAP.txt
+blaze_packets_analysis.json
+temp_analysis.json
+
+# Backups
+*.tar.gz
+*.zip
+backup/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Capturas PCAPNG (muy grandes)
+*.pcapng
+*.pcap
+
+# Archivos de sistema
+*.pid
+*.sock

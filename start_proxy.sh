@@ -33,12 +33,12 @@ check_ok() {
 
 check_warn() {
     echo -e "${YELLOW}⚠${NC} $1"
-    ((warnings++))
+    warnings=$((warnings + 1))
 }
 
 check_error() {
     echo -e "${RED}✗${NC} $1"
-    ((errors++))
+    errors=$((errors + 1))
 }
 
 # ============================================================

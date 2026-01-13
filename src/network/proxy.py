@@ -51,6 +51,75 @@ class ProxyServer:
         """Actualiza credenciales de EA"""
         self.credentials = credentials
     
+    def parse_blaze_header(self, data: bytes) -> dict:
+        """
+        Parsea el header de un paquete Blaze.
+        
+        Header format (12 bytes):
+        [0-1] Length (uint16)
+        [2]   ?
+        [3]   Component
+        [4]   ?
+        [5]   Command
+        [6-7] Error code
+        [8-9] Message type (0=REQUEST, 0x1000=RESPONSE, 0x2000=NOTIFICATION)
+        [10-11] Message ID
+        """
+        if len(data) < 12:
+            return None
+        
+        import struct
+        
+        return {
+            'length': struct.unpack('>H', data[0:2])[0],
+            'component': data[3],
+            'command': data[5],
+            'error': struct.unpack('>H', data[6:8])[0],
+            'msg_type': struct.unpack('>H', data[8:10])[0],
+            'msg_id': struct.unpack('>H', data[10:12])[0]
+        }
+    
+    def build_auto_response(self, data: bytes) -> bytes:
+        """
+        Construye respuesta automática para comandos keep-alive críticos.
+        
+        Comandos soportados:
+        - 0x09/0x02: Ping (retorna timestamp)
+        - 0x0B/0x8C: Request recurrente (respuesta vacía)
+        - 0x0B/0x40: Request recurrente (respuesta vacía)
+        
+        Returns:
+            bytes: Paquete de respuesta, o None si no requiere auto-respuesta
+        """
+        header = self.parse_blaze_header(data)
+        if not header:
+            return None
+        
+        # Solo auto-responder REQUESTs (msg_type == 0)
+        if header['msg_type'] != 0:
+            return None
+        
+        from .tdf import BlazeResponseBuilder
+        builder = BlazeResponseBuilder()
+        
+        component = header['component']
+        command = header['command']
+        msg_id = header['msg_id']
+        
+        # Ping keep-alive
+        if component == 0x09 and command == 0x02:
+            response = builder.build_ping_response(msg_id)
+            logger.debug(f"📡 Auto-responded to ping (msg_id={msg_id})")
+            return response
+        
+        # Comandos 0x0B (respuesta vacía)
+        elif component == 0x0B and command in [0x8C, 0x40]:
+            response = builder.build_empty_response(component, command, msg_id)
+            logger.debug(f"📡 Auto-responded to 0x0B/0x{command:02X} (msg_id={msg_id})")
+            return response
+        
+        return None
+    
     async def handle_client(
         self,
         client_reader: asyncio.StreamReader,
@@ -62,6 +131,9 @@ class ProxyServer:
         """
         addr = client_writer.get_extra_info('peername')
         logger.info(f"Proxy: Nueva conexión desde {addr}")
+        
+        # Guardar client_writer para auto-responder
+        self._client_writer = client_writer
         
         ea_reader: Optional[asyncio.StreamReader] = None
         ea_writer: Optional[asyncio.StreamWriter] = None
@@ -86,6 +158,7 @@ class ProxyServer:
             logger.error(f"Proxy: Error en túnel: {e}", exc_info=True)
         finally:
             self.authenticated = False
+            self._client_writer = None
             
             # Cerrar conexiones
             try:
@@ -109,7 +182,7 @@ class ProxyServer:
         writer: asyncio.StreamWriter
     ):
         """
-        RPCS3 → EA (con intercepción de autenticación)
+        RPCS3 → EA (con intercepción de autenticación y auto-responder)
         Basado en Form1.cs líneas 362-396
         """
         try:
@@ -134,8 +207,21 @@ class ProxyServer:
                     else:
                         logger.warning("Proxy: Sin credenciales configuradas!")
                 
+                # Reenviar data a EA
                 writer.write(data)
                 await writer.drain()
+                
+                # AUTO-RESPONDER: Verificar si necesita respuesta inmediata
+                # Esto mantiene el keep-alive activo
+                if self.authenticated:
+                    auto_response = self.build_auto_response(data)
+                    if auto_response:
+                        # Obtener writer del cliente para enviar response directa
+                        # NOTA: Necesitamos acceso al client_writer aquí
+                        # Lo guardaremos como atributo de instancia
+                        if hasattr(self, '_client_writer') and self._client_writer:
+                            self._client_writer.write(auto_response)
+                            await self._client_writer.drain()
                 
         except Exception as e:
             logger.error(f"Proxy: Error en tunnel_to_ea: {e}")

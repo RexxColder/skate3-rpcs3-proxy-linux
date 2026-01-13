@@ -109,9 +109,13 @@ class Skate3Proxy:
 
 def main():
     """Entry point"""
-    # Configurar logging
+    import os
+    
+    # Configurar logging - soportar DEBUG via env var
+    log_level = logging.DEBUG if os.getenv('DEBUG') == '1' else logging.INFO
+    
     logging.basicConfig(
-        level=logging.INFO,
+        level=log_level,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
             logging.StreamHandler(),

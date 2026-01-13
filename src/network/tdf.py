@@ -258,6 +258,94 @@ class BlazeAuthPacket:
         return bytes(header) + tdf_payload
 
 
+class BlazeResponseBuilder:
+    """
+    Constructor de respuestas automáticas para keep-alive.
+    Basado en análisis de paquetes del COMPLETE_PROTOCOL_MAP.txt
+    """
+    
+    def __init__(self):
+        self.ping_counter = 0  # Counter para timestamp incremental
+    
+    @staticmethod
+    def build_ping_response(msg_id: int) -> bytes:
+        """
+        Construye respuesta para ping 0x09/0x02.
+        
+        Formato observado en capturas Windows:
+        Header: 00 08 00 09 00 02 00 00 10 00 [msg_id] 
+        Payload: CF 4A 6D 74 69 64 28 [timestamp_byte]
+        
+        Total: 20 bytes (12 header + 8 payload)
+        """
+        # Header (12 bytes)
+        header = bytearray(12)
+        
+        # Length: 8 bytes payload
+        struct.pack_into('>H', header, 0, 0x0008)
+        
+        # Component: 0x09 (UTIL)
+        header[3] = 0x09
+        
+        # Command: 0x02 (ping)
+        header[5] = 0x02
+        
+        # Error: 0
+        struct.pack_into('>H', header, 6, 0)
+        
+        # Msg Type: 0x1000 (4096 = RESPONSE)
+        struct.pack_into('>H', header, 8, 0x1000)
+        
+        # Msg ID: preservar del request
+        struct.pack_into('>H', header, 10, msg_id)
+        
+        # Payload TDF (8 bytes)
+        # Tag CF 4A 6D = "tid" (timestamp id)
+        # Type 0x74 = UINT32
+        # Value: timestamp incremental (último byte cambia)
+        payload = bytes([
+            0xCF, 0x4A, 0x6D,  # Tag "tid"
+            0x74,              # Type UINT32
+            0x69, 0x64, 0x28,  # Primeros 3 bytes del valor
+            (0xD6 + (msg_id % 50))  # Último byte varía ligeramente
+        ])
+        
+        return bytes(header) + payload
+    
+    @staticmethod
+    def build_empty_response(component: int, command: int, msg_id: int) -> bytes:
+        """
+        Construye respuesta vacía (solo header) para comandos 0x0B.
+        
+        Usado para:
+        - Component 0x0B, Command 0x8C
+        - Component 0x0B, Command 0x40
+        
+        Total: 12 bytes (solo header, payload vacío)
+        """
+        header = bytearray(12)
+        
+        # Length: 0 (sin payload)
+        struct.pack_into('>H', header, 0, 0x0000)
+        
+        # Component
+        header[3] = component
+        
+        # Command
+        header[5] = command
+        
+        # Error: 0
+        struct.pack_into('>H', header, 6, 0)
+        
+        # Msg Type: 0x1000 (RESPONSE)
+        struct.pack_into('>H', header, 8, 0x1000)
+        
+        # Msg ID
+        struct.pack_into('>H', header, 10, msg_id)
+        
+        return bytes(header)
+
+
 def inject_credentials_into_packet(packet_data: bytes, email: str, password: str, psn_name: str) -> bytes:
     """
     Inyecta credenciales en un paquete de autenticación existente.
